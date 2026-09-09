@@ -1,0 +1,6 @@
+{
+  "name": "QuickBill PRP",
+  "description": "QuickBill PRP – Enterprise ERP Solution for Invoicing, Quotations & Business MIS.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
