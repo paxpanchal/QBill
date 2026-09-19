@@ -695,7 +695,30 @@ class IndexedDBService {
     const list = await this.getAllFromStore<any>(STORES.SETTINGS);
     if (list.length > 0) {
       const { id, ...settings } = list[0];
-      const merged: AppSettings = { ...DEFAULT_SETTINGS, ...settings };
+      const merged: AppSettings = {
+        ...DEFAULT_SETTINGS,
+        ...settings,
+        business: { ...DEFAULT_SETTINGS.business, ...(settings.business || {}) },
+        bank: { ...DEFAULT_SETTINGS.bank, ...(settings.bank || {}) },
+        branding: {
+          ...DEFAULT_SETTINGS.branding,
+          ...(settings.branding || {}),
+          showLogo: settings.branding?.showLogo ?? true,
+          showSignature: settings.branding?.showSignature ?? true,
+          showStamp: settings.branding?.showStamp ?? true,
+        },
+        tax: { ...DEFAULT_SETTINGS.tax, ...(settings.tax || {}) },
+        numbering: {
+          ...DEFAULT_SETTINGS.numbering,
+          ...(settings.numbering || {}),
+          invoice: { ...DEFAULT_SETTINGS.numbering.invoice, ...(settings.numbering?.invoice || {}) },
+          quotation: { ...DEFAULT_SETTINGS.numbering.quotation, ...(settings.numbering?.quotation || {}) },
+          purchaseOrder: { ...DEFAULT_SETTINGS.numbering.purchaseOrder, ...(settings.numbering?.purchaseOrder || {}) },
+        },
+        print: { ...DEFAULT_SETTINGS.print, ...(settings.print || {}) },
+        terms: { ...DEFAULT_SETTINGS.terms, ...(settings.terms || {}) },
+        documentEdit: { ...DEFAULT_SETTINGS.documentEdit, ...(settings.documentEdit || {}) },
+      };
       // Sanitize any residual demo business data if present
       if (merged.business?.businessName === 'PRAMUKRAJ ENTERPRISES') {
         merged.business = { ...DEFAULT_SETTINGS.business };

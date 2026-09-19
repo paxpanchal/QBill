@@ -86,6 +86,39 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
     setAuditLogs(logs);
   };
 
+  const optimizeAndLoadImage = (file: File, maxWidth = 600, maxHeight = 300): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = reject;
+      reader.onload = ev => {
+        const img = new Image();
+        img.onerror = reject;
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > maxWidth || height > maxHeight) {
+            const ratio = Math.min(maxWidth / width, maxHeight / height);
+            width = Math.round(width * ratio);
+            height = Math.round(height * ratio);
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(ev.target?.result as string);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, width, height);
+          const isPng = file.type === 'image/png';
+          const dataUrl = canvas.toDataURL(isPng ? 'image/png' : 'image/jpeg', 0.92);
+          resolve(dataUrl);
+        };
+        img.src = ev.target?.result as string;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleSaveSettings = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!settings) return;
@@ -959,32 +992,41 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
             <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
               <div className="font-bold text-xs text-slate-800 uppercase">Company Logo</div>
               {settings.branding.logoUrl ? (
-                <div className="h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200">
+                <div className="h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200 shadow-2xs">
                   <img src={settings.branding.logoUrl} alt="Logo" className="max-h-full max-w-full object-contain" />
                 </div>
               ) : (
                 <div className="h-28 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-lg text-xs">
                   <span>No logo uploaded</span>
-                  <span className="text-[10px] text-slate-400">(Default initials badge used)</span>
+                  <span className="text-[10px] text-slate-400">(Default business text used)</span>
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <label className="flex-1 text-center py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer">
+                <label className="flex-1 text-center py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs">
                   Upload Logo
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={e => {
+                    onChange={async e => {
                       const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = ev => {
-                          setSettings({
+                      if (file && settings) {
+                        try {
+                          const dataUrl = await optimizeAndLoadImage(file, 600, 260);
+                          const updated = {
                             ...settings,
-                            branding: { ...settings.branding, logoUrl: ev.target?.result as string },
-                          });
-                        };
-                        reader.readAsDataURL(file);
+                            branding: {
+                              ...settings.branding,
+                              logoUrl: dataUrl,
+                              showLogo: true,
+                            },
+                          };
+                          setSettings(updated);
+                          await dbService.saveSettings(updated);
+                          setSaveMessage('Company logo uploaded & saved persistently!');
+                          setTimeout(() => setSaveMessage(''), 3500);
+                        } catch (err) {
+                          console.error('Logo upload error:', err);
+                        }
                       }
                     }}
                     className="hidden"
@@ -992,8 +1034,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 </label>
                 {settings.branding.logoUrl && (
                   <button
-                    onClick={() => setSettings({ ...settings, branding: { ...settings.branding, logoUrl: '' } })}
-                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 text-xs"
+                    onClick={async () => {
+                      if (!settings) return;
+                      const updated = {
+                        ...settings,
+                        branding: { ...settings.branding, logoUrl: '' },
+                      };
+                      setSettings(updated);
+                      await dbService.saveSettings(updated);
+                      setSaveMessage('Logo removed successfully.');
+                      setTimeout(() => setSaveMessage(''), 3000);
+                    }}
+                    className="p-2 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 text-xs transition-colors"
                     title="Remove Logo"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1004,13 +1056,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 <input
                   type="checkbox"
                   checked={settings.branding.showLogo}
-                  onChange={e =>
-                    setSettings({
+                  onChange={async e => {
+                    if (!settings) return;
+                    const updated = {
                       ...settings,
                       branding: { ...settings.branding, showLogo: e.target.checked },
-                    })
-                  }
-                  className="rounded text-indigo-600"
+                    };
+                    setSettings(updated);
+                    await dbService.saveSettings(updated);
+                  }}
+                  className="rounded text-indigo-600 focus:ring-indigo-500"
                 />
                 <span>Show Logo on Print / PDF</span>
               </label>
@@ -1020,7 +1075,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
             <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
               <div className="font-bold text-xs text-slate-800 uppercase">Authorized Signature</div>
               {settings.branding.signatureUrl ? (
-                <div className="h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200">
+                <div className="h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200 shadow-2xs">
                   <img src={settings.branding.signatureUrl} alt="Signature" className="max-h-full max-w-full object-contain" />
                 </div>
               ) : (
@@ -1029,22 +1084,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <label className="flex-1 text-center py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer">
+                <label className="flex-1 text-center py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs">
                   Upload Signature
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={e => {
+                    onChange={async e => {
                       const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = ev => {
-                          setSettings({
+                      if (file && settings) {
+                        try {
+                          const dataUrl = await optimizeAndLoadImage(file, 500, 200);
+                          const updated = {
                             ...settings,
-                            branding: { ...settings.branding, signatureUrl: ev.target?.result as string },
-                          });
-                        };
-                        reader.readAsDataURL(file);
+                            branding: {
+                              ...settings.branding,
+                              signatureUrl: dataUrl,
+                              showSignature: true,
+                            },
+                          };
+                          setSettings(updated);
+                          await dbService.saveSettings(updated);
+                          setSaveMessage('Authorized signature uploaded & saved!');
+                          setTimeout(() => setSaveMessage(''), 3500);
+                        } catch (err) {
+                          console.error('Signature upload error:', err);
+                        }
                       }
                     }}
                     className="hidden"
@@ -1052,8 +1116,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 </label>
                 {settings.branding.signatureUrl && (
                   <button
-                    onClick={() => setSettings({ ...settings, branding: { ...settings.branding, signatureUrl: '' } })}
-                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 text-xs"
+                    onClick={async () => {
+                      if (!settings) return;
+                      const updated = {
+                        ...settings,
+                        branding: { ...settings.branding, signatureUrl: '' },
+                      };
+                      setSettings(updated);
+                      await dbService.saveSettings(updated);
+                      setSaveMessage('Signature removed successfully.');
+                      setTimeout(() => setSaveMessage(''), 3000);
+                    }}
+                    className="p-2 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 text-xs transition-colors"
                     title="Remove Signature"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1064,13 +1138,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 <input
                   type="checkbox"
                   checked={settings.branding.showSignature}
-                  onChange={e =>
-                    setSettings({
+                  onChange={async e => {
+                    if (!settings) return;
+                    const updated = {
                       ...settings,
                       branding: { ...settings.branding, showSignature: e.target.checked },
-                    })
-                  }
-                  className="rounded text-indigo-600"
+                    };
+                    setSettings(updated);
+                    await dbService.saveSettings(updated);
+                  }}
+                  className="rounded text-indigo-600 focus:ring-indigo-500"
                 />
                 <span>Show Signature on Print / PDF</span>
               </label>
@@ -1080,7 +1157,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
             <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
               <div className="font-bold text-xs text-slate-800 uppercase">Official Business Stamp</div>
               {settings.branding.stampUrl ? (
-                <div className="h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200">
+                <div className="h-28 flex items-center justify-center p-2 bg-white rounded-lg border border-slate-200 shadow-2xs">
                   <img src={settings.branding.stampUrl} alt="Stamp" className="max-h-full max-w-full object-contain" />
                 </div>
               ) : (
@@ -1089,22 +1166,31 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 </div>
               )}
               <div className="flex items-center gap-2">
-                <label className="flex-1 text-center py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer">
+                <label className="flex-1 text-center py-2 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-xs">
                   Upload Stamp
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={e => {
+                    onChange={async e => {
                       const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = ev => {
-                          setSettings({
+                      if (file && settings) {
+                        try {
+                          const dataUrl = await optimizeAndLoadImage(file, 400, 240);
+                          const updated = {
                             ...settings,
-                            branding: { ...settings.branding, stampUrl: ev.target?.result as string },
-                          });
-                        };
-                        reader.readAsDataURL(file);
+                            branding: {
+                              ...settings.branding,
+                              stampUrl: dataUrl,
+                              showStamp: true,
+                            },
+                          };
+                          setSettings(updated);
+                          await dbService.saveSettings(updated);
+                          setSaveMessage('Business stamp uploaded & saved!');
+                          setTimeout(() => setSaveMessage(''), 3500);
+                        } catch (err) {
+                          console.error('Stamp upload error:', err);
+                        }
                       }
                     }}
                     className="hidden"
@@ -1112,8 +1198,18 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 </label>
                 {settings.branding.stampUrl && (
                   <button
-                    onClick={() => setSettings({ ...settings, branding: { ...settings.branding, stampUrl: '' } })}
-                    className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 text-xs"
+                    onClick={async () => {
+                      if (!settings) return;
+                      const updated = {
+                        ...settings,
+                        branding: { ...settings.branding, stampUrl: '' },
+                      };
+                      setSettings(updated);
+                      await dbService.saveSettings(updated);
+                      setSaveMessage('Stamp removed successfully.');
+                      setTimeout(() => setSaveMessage(''), 3000);
+                    }}
+                    className="p-2 rounded-lg text-red-600 hover:bg-red-50 border border-red-200 text-xs transition-colors"
                     title="Remove Stamp"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -1124,13 +1220,16 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ initialTab }) => {
                 <input
                   type="checkbox"
                   checked={settings.branding.showStamp}
-                  onChange={e =>
-                    setSettings({
+                  onChange={async e => {
+                    if (!settings) return;
+                    const updated = {
                       ...settings,
                       branding: { ...settings.branding, showStamp: e.target.checked },
-                    })
-                  }
-                  className="rounded text-indigo-600"
+                    };
+                    setSettings(updated);
+                    await dbService.saveSettings(updated);
+                  }}
+                  className="rounded text-indigo-600 focus:ring-indigo-500"
                 />
                 <span>Show Stamp on Print / PDF</span>
               </label>
